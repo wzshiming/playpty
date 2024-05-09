@@ -54,7 +54,6 @@ def write_with_delay(fd: int, content: str, delay: float):
     global last_typing
     for idx, c in enumerate(content):
         os.write(fd, c.encode())
-        os.fsync(fd)
         if idx == len(content) - 1:
             last_typing = time.time()
         time.sleep(delay)
