@@ -1,0 +1,50 @@
+# Guide (user-friendly):
+# https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
+
+# Specification (technical, formal):
+# https://packaging.python.org/en/latest/specifications/pyproject-toml/
+
+# Choosing a build backend:
+# https://packaging.python.org/en/latest/tutorials/packaging-projects/#choosing-a-build-backend
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "playpty"
+version = "0.0.1"
+description = "Play script in pty"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+keywords = ["playpty"]
+authors = [
+  {name = "wzshiming", email = "wzshiming@foxmail.com" }
+]
+
+# Classifiers help users find your project by categorizing it.
+#
+# For a list of valid classifiers, see https://pypi.org/classifiers/
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3 :: Only",
+]
+
+dependencies = []
+
+[project.urls]
+"Homepage" = "https://github.com/wzshiming/playpty"
+"Source" = "https://github.com/wzshiming/playpty"
+
+[project.scripts]
+playpty = "playpty:main"
+
+
