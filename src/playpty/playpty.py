@@ -25,13 +25,16 @@ def read_with_timeout(fd: int, timeout: float, length: int = 1024):
 
 
 def redirect_output(fd: int, prompt: bytes):
+    buf = b""
     global last_prompt
     while True:
         try:
             output = read_with_timeout(fd, 2)
             if output:
-                if output == prompt:
+                buf += output
+                if buf.endswith(prompt):
                     last_prompt = time.time()
+                    buf = b""
                 sys.stdout.write(output.decode())
                 sys.stdout.flush()
         except OSError:
