@@ -68,12 +68,12 @@ def clear_header(fd: int, ps1: str):
 
 def get_prompt(fd: int):
     os.write(fd, b"\n")
-    first = read_with_timeout(fd, 60)
-    second = read_with_timeout(fd, 60)
-
-    output = b""
-    output += first
-    output += second
+    output = read_with_timeout(fd, 10)
+    while True:
+        out = read_with_timeout(fd, 1)
+        if out is None:
+            break
+        output += out
 
     n = output.rsplit(b'\r', 1)
     if len(n) == 2:
