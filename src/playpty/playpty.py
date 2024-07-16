@@ -47,7 +47,8 @@ def wait_prompt():
     while True:
         if last_prompt > last_typing:
             break
-        time.sleep(0.1)
+        # print(last_prompt, last_typing)
+        time.sleep(1.1)
 
 
 def write_with_delay(fd: int, content: str, delay: float):
@@ -59,7 +60,8 @@ def write_with_delay(fd: int, content: str, delay: float):
         time.sleep(delay)
 
 
-def clear_header(fd: int):
+def clear_header(fd: int, ps1: str):
+    os.write(fd, ("export PS1='%s'\n" % ps1).encode())
     while True:
         if read_with_timeout(fd, 1) is None:
             break
@@ -67,14 +69,24 @@ def clear_header(fd: int):
 
 def get_prompt(fd: int):
     os.write(fd, b"\n")
-    os.read(fd, 1024)
+    first = read_with_timeout(fd, 5)
+    second = read_with_timeout(fd, 5)
 
-    return os.read(fd, 1024)
+    output = b""
+    if first:
+        output += first
+    if second:
+        output += second
+
+    n = output.rsplit(b'\r', 1)
+    if len(n) == 2:
+        return n[1]
+    return output
 
 
 def step(fd: int, line):
     if not line.strip():
-        write_with_delay(fd, "\n", 0)
+        write_with_delay(fd, "\n", 0.1)
         time.sleep(1)
         return
 
@@ -83,8 +95,12 @@ def step(fd: int, line):
         time.sleep(0.1)
         return
 
-    write_with_delay(fd, line, 0.05)
+    write_with_delay(fd, line, 0.1)
+    # Multiline input
     if line.endswith(" \\\n"):
+        return
+    # Clear the screen
+    if line.strip() == "clear":
         return
 
     wait_prompt()
@@ -121,10 +137,10 @@ def _main(
 
     os.close(slave)
 
-    clear_header(master)
+    clear_header(master, ps1)
 
     prompt = get_prompt(master)
-    print(prompt.decode(), end='')
+    print(prompt.decode().lstrip(), end='')
 
     t = threading.Thread(target=redirect_output, args=(master, prompt))
     t.start()
