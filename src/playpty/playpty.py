@@ -47,8 +47,7 @@ def wait_prompt():
     while True:
         if last_prompt > last_typing:
             break
-        # print(last_prompt, last_typing)
-        time.sleep(1.1)
+        time.sleep(0.1)
 
 
 def write_with_delay(fd: int, content: str, delay: float):
@@ -69,14 +68,12 @@ def clear_header(fd: int, ps1: str):
 
 def get_prompt(fd: int):
     os.write(fd, b"\n")
-    first = read_with_timeout(fd, 5)
-    second = read_with_timeout(fd, 5)
+    first = read_with_timeout(fd, 60)
+    second = read_with_timeout(fd, 60)
 
     output = b""
-    if first:
-        output += first
-    if second:
-        output += second
+    output += first
+    output += second
 
     n = output.rsplit(b'\r', 1)
     if len(n) == 2:
