@@ -137,6 +137,16 @@ def _main(
     clear_header(master, ps1)
 
     prompt = get_prompt(master)
+    prompt2 = get_prompt(master)
+    if prompt2 != prompt:
+        prompt3 = get_prompt(master)
+        if prompt2 == prompt3:
+            prompt = prompt2
+        elif prompt == prompt3:
+            pass
+        else:
+            raise "can't to get prompt %s, %s, %s" % (prompt, prompt2, prompt)
+
     print(prompt.decode().lstrip(), end='')
 
     t = threading.Thread(target=redirect_output, args=(master, prompt))
