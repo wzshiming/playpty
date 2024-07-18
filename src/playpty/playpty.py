@@ -60,7 +60,8 @@ def write_with_delay(fd: int, content: str, delay: float):
 
 
 def clear_header(fd: int, ps1: str):
-    os.write(fd, ("export PS1='%s'\n" % ps1).encode())
+    if ps1 != "":
+        os.write(fd, ("export PS1='%s'\n" % ps1).encode())
     while True:
         if read_with_timeout(fd, 1) is None:
             break
@@ -123,13 +124,16 @@ def _main(
 ):
     master, slave = pty.openpty()
 
-    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+    if rows > 0 and cols > 0:
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
     sub_env = {
-        "PS1": ps1,
         "SHELL": shell,
         "TERM": term,
     }
+    if ps1 != "":
+        sub_env["PS1"] = ps1
+
     for e in env:
         if e in os.environ:
             sub_env[e] = os.environ[e]
@@ -172,11 +176,11 @@ def _main(
 def main():
     parser = argparse.ArgumentParser(description='Process shell commands from a file.')
     parser.add_argument('file', help='The file containing the shell commands to process.')
-    parser.add_argument('--ps1', help='The PS1 environment variable to use.', default='$ ')
+    parser.add_argument('--ps1', help='The PS1 environment variable to use.', default='')
     parser.add_argument('--shell', help='The shell to use.', default='bash')
     parser.add_argument('--term', help='The TERM environment variable to use.', default='xterm-256color')
-    parser.add_argument('--cols', help='The number of columns to use.', default=86)
-    parser.add_argument('--rows', help='The number of rows to use.', default=24)
+    parser.add_argument('--cols', help='The number of columns to use.', default=-1)
+    parser.add_argument('--rows', help='The number of rows to use.', default=-1)
     parser.add_argument('--env', help='The environment variables to pass', default=list[str](), nargs='+')
 
     args = parser.parse_args()
