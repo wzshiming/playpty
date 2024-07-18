@@ -1,6 +1,6 @@
 # playpty
 
-Play script in pty
+This is a tool that reads from a file and simulates user input on tty
 
 This is only tested in [democtl](https://github.com/wzshiming/democtl)
 
