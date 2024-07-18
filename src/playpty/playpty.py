@@ -81,7 +81,7 @@ def get_prompt(fd: int):
     return output
 
 
-def step(fd: int, line):
+def step(fd: int, line: str, prompt: str):
     if not line.strip():
         write_with_delay(fd, "\n", 0.1)
         time.sleep(1)
@@ -90,6 +90,15 @@ def step(fd: int, line):
     if line.startswith('#'):
         write_with_delay(fd, line, 0.1)
         time.sleep(0.1)
+        return
+
+    if line.startswith('@'):
+        args = line.rstrip().split(' ')
+        if args[0] == '@pause':
+            input()
+            print(prompt, end='')
+        elif len(args) >= 2 and args[0] == '@sleep':
+            time.sleep(int(args[1]))
         return
 
     write_with_delay(fd, line, 0.1)
@@ -147,14 +156,15 @@ def _main(
         else:
             raise "can't to get prompt %s, %s, %s" % (prompt, prompt2, prompt)
 
-    print(prompt.decode().lstrip(), end='')
+    sim_prompt = prompt.decode().lstrip()
+    print(sim_prompt, end='')
 
     t = threading.Thread(target=redirect_output, args=(master, prompt))
     t.start()
 
     with open(file, 'r') as f:
         for line in f:
-            step(master, line)
+            step(master, line, sim_prompt)
 
     os.close(master)
 
