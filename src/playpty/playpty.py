@@ -82,6 +82,22 @@ def get_prompt(fd: int):
     return output
 
 
+def must_get_prompt(fd: int):
+    prompt = get_prompt(fd)
+    prompt2 = get_prompt(fd)
+    if prompt == prompt2:
+        return prompt
+
+    prompt3 = get_prompt(fd)
+    if prompt2 == prompt3:
+        return prompt2
+
+    if prompt == prompt3:
+        return prompt
+
+    raise "can't to get prompt %s, %s, %s" % (prompt, prompt2, prompt)
+
+
 def step(fd: int, line: str, prompt: str):
     if not line.strip():
         write_with_delay(fd, "\n", 0.1)
@@ -149,16 +165,7 @@ def _main(
 
     clear_header(master, ps1)
 
-    prompt = get_prompt(master)
-    prompt2 = get_prompt(master)
-    if prompt2 != prompt:
-        prompt3 = get_prompt(master)
-        if prompt2 == prompt3:
-            prompt = prompt2
-        elif prompt == prompt3:
-            pass
-        else:
-            raise "can't to get prompt %s, %s, %s" % (prompt, prompt2, prompt)
+    prompt = must_get_prompt(master)
 
     sim_prompt = prompt.decode().lstrip()
     print(sim_prompt, end='')
