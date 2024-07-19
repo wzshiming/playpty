@@ -126,6 +126,10 @@ def step(fd: int, line: str, prompt: str):
     if line.endswith("\\\n"):
         return
 
+    # Clear the screen
+    if content == "clear":
+        return
+
     wait_prompt()
 
 
