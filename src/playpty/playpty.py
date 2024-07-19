@@ -15,6 +15,7 @@ import termios
 
 last_typing = time.time()
 last_prompt = time.time()
+typing_interval = 0.1
 
 
 def read_with_timeout(fd: int, timeout: float, length: int = 1024):
@@ -99,31 +100,30 @@ def must_get_prompt(fd: int):
 
 
 def step(fd: int, line: str, prompt: str):
-    if not line.strip():
-        write_with_delay(fd, "\n", 0.1)
-        time.sleep(1)
+    global typing_interval
+    content = line.strip()
+    if not content:
+        write_with_delay(fd, "\n", typing_interval)
         return
 
-    if line.startswith('#'):
-        write_with_delay(fd, line, 0.1)
-        time.sleep(0.1)
+    if content.startswith('#'):
+        write_with_delay(fd, line, typing_interval)
         return
 
-    if line.startswith('@'):
-        args = line.rstrip().split(' ')
+    if content.startswith('@'):
+        args = content.split(' ')
         if args[0] == '@pause':
             input()
             print(prompt, end='')
         elif len(args) >= 2 and args[0] == '@sleep':
-            time.sleep(int(args[1]))
+            time.sleep(float(args[1]))
+        elif len(args) >= 2 and args[0] == '@typing-interval':
+            typing_interval = float(args[1])
         return
 
-    write_with_delay(fd, line, 0.1)
+    write_with_delay(fd, line, typing_interval)
     # Multiline input
-    if line.endswith(" \\\n"):
-        return
-    # Clear the screen
-    if line.strip() == "clear":
+    if line.endswith("\\\n"):
         return
 
     wait_prompt()
