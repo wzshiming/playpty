@@ -26,13 +26,14 @@ class PlayPty:
         while True:
             try:
                 output = self.read_with_timeout(fd, 2)
-                if output:
-                    buf += output
-                    if buf.endswith(prompt):
-                        self.last_prompt = time.time()
-                        buf = b""
-                    sys.stdout.write(output.decode())
-                    sys.stdout.flush()
+                if output is None:
+                    continue
+                buf += output
+                if buf.endswith(prompt):
+                    self.last_prompt = time.time()
+                    buf = b""
+                sys.stdout.write(output.decode())
+                sys.stdout.flush()
             except OSError:
                 return
 
@@ -117,41 +118,41 @@ class PlayPty:
 
         self.wait_prompt()
 
-    def resize(self, fd: int, cols: int, rows: int):
-        if rows > 0 and cols > 0:
-            fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
-
     def __init__(
             self,
-            file: str,
             ps1: str,
             shell: str,
             term: str,
-            cols: int,
-            rows: int,
             env: list[str],
             typing_interval: float = 0.1
     ):
         self.last_typing = time.time()
         self.last_prompt = time.time()
         self.typing_interval = typing_interval
+        self.shell = shell
+        self.term = term
+        self.ps1 = ps1
+        self.env = env
 
+    def __enter__(self):
+        self.start()
+        return self
+
+    def start(self):
         master, slave = pty.openpty()
 
-        self.resize(master, rows, cols)
-
         sub_env = {
-            "SHELL": shell,
-            "TERM": term,
+            "SHELL": self.shell,
+            "TERM": self.term,
         }
-        if ps1 != "":
-            sub_env["PS1"] = ps1
+        if self.ps1 != "":
+            sub_env["PS1"] = self.ps1
 
-        for e in env:
+        for e in self.env:
             if e in os.environ:
                 sub_env[e] = os.environ[e]
         subprocess.Popen(
-            [shell],
+            [self.shell],
             stdin=slave,
             stdout=slave,
             stderr=slave,
@@ -160,28 +161,37 @@ class PlayPty:
 
         os.close(slave)
 
-        self.clear_header(master, ps1)
+        self.clear_header(master, self.ps1)
 
         prompt = self.must_get_prompt(master)
 
         sim_prompt = prompt.decode().lstrip()
-        print(sim_prompt, end='')
+        self.master = master
+        self.sim_prompt = sim_prompt
 
         t = threading.Thread(target=self.redirect_output, args=(master, prompt))
         t.start()
+        print(self.sim_prompt, end='')
 
-        with open(file, 'r') as f:
-            for line in f:
-                self.step(master, line, sim_prompt)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
-        os.close(master)
+    def close(self):
+        os.close(self.master)
+
+    def play_line(self, line: str):
+        self.step(self.master, line, self.sim_prompt)
+
+    def resize(self, cols: int, rows: int):
+        if rows > 0 and cols > 0:
+            fcntl.ioctl(self.master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
 
 def main():
     parser = argparse.ArgumentParser(description='Process shell commands from a file.')
     parser.add_argument('file', help='The file containing the shell commands to process.')
     parser.add_argument('--ps1', help='The PS1 environment variable to use.', default='')
-    parser.add_argument('--shell', help='The shell to use.', default='bash')
+    parser.add_argument('--shell', help='The shell to use.', default=os.environ.get("SHELL", "sh"))
     parser.add_argument('--term', help='The TERM environment variable to use.', default='xterm-256color')
     parser.add_argument('--cols', help='The number of columns to use.', default=-1)
     parser.add_argument('--rows', help='The number of rows to use.', default=-1)
@@ -193,15 +203,18 @@ def main():
         print(f"File {args.file} does not exist.")
         sys.exit(1)
 
-    PlayPty(
-        file=args.file,
+    with PlayPty(
         ps1=args.ps1,
         shell=args.shell,
         term=args.term,
-        cols=int(args.cols),
-        rows=int(args.rows),
         env=args.env,
-    )
+    ) as pp, open(args.file, 'r') as f:
+        pp.resize(
+            cols=int(args.cols),
+            rows=int(args.rows),
+        )
+        for line in f:
+            pp.play_line(line)
 
 
 if __name__ == "__main__":
