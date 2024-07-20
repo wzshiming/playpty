@@ -89,6 +89,8 @@ class PlayPty:
     def step(self, fd: int, line: str, prompt: str):
         content = line.strip()
         if not content:
+            if self.empty_line_interval:
+                time.sleep(self.empty_line_interval)
             self.write_with_delay(fd, "\n", self.typing_interval)
             return
 
@@ -124,11 +126,15 @@ class PlayPty:
             shell: str,
             term: str,
             env: list[str],
-            typing_interval: float = 0.1
+            typing_interval: float = 0.1,
+            empty_line_interval: float = 1.0,
     ):
+        self.sim_prompt = None
+        self.master = None
         self.last_typing = time.time()
         self.last_prompt = time.time()
         self.typing_interval = typing_interval
+        self.empty_line_interval = empty_line_interval
         self.shell = shell
         self.term = term
         self.ps1 = ps1
@@ -196,6 +202,8 @@ def main():
     parser.add_argument('--cols', help='The number of columns to use.', default=-1)
     parser.add_argument('--rows', help='The number of rows to use.', default=-1)
     parser.add_argument('--env', help='The environment variables to pass', default=list[str](), nargs='+')
+    parser.add_argument('--typing-interval', help='The default typing interval', default=0.1)
+    parser.add_argument('--empty-line-interval', help='The default empty line interval', default=1)
 
     args = parser.parse_args()
 
@@ -208,6 +216,8 @@ def main():
         shell=args.shell,
         term=args.term,
         env=args.env,
+        typing_interval=float(args.typing_interval),
+        empty_line_interval=float(args.empty_line_interval),
     ) as pp, open(args.file, 'r') as f:
         pp.resize(
             cols=int(args.cols),
