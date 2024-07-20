@@ -13,175 +13,168 @@ import struct
 import fcntl
 import termios
 
-last_typing = time.time()
-last_prompt = time.time()
-typing_interval = 0.1
 
+class PlayPty:
+    def read_with_timeout(self, fd: int, timeout: float, length: int = 1024):
+        ready, _, _ = select.select([fd], [], [], timeout)
+        if ready:
+            return os.read(fd, length)
+        return None
 
-def read_with_timeout(fd: int, timeout: float, length: int = 1024):
-    ready, _, _ = select.select([fd], [], [], timeout)
-    if ready:
-        return os.read(fd, length)
-    return None
+    def redirect_output(self, fd: int, prompt: bytes):
+        buf = b""
+        while True:
+            try:
+                output = self.read_with_timeout(fd, 2)
+                if output:
+                    buf += output
+                    if buf.endswith(prompt):
+                        self.last_prompt = time.time()
+                        buf = b""
+                    sys.stdout.write(output.decode())
+                    sys.stdout.flush()
+            except OSError:
+                return
 
+    def wait_prompt(self):
+        while True:
+            if self.last_prompt > self.last_typing:
+                break
+            time.sleep(0.1)
 
-def redirect_output(fd: int, prompt: bytes):
-    buf = b""
-    global last_prompt
-    while True:
-        try:
-            output = read_with_timeout(fd, 2)
-            if output:
-                buf += output
-                if buf.endswith(prompt):
-                    last_prompt = time.time()
-                    buf = b""
-                sys.stdout.write(output.decode())
-                sys.stdout.flush()
-        except OSError:
+    def write_with_delay(self, fd: int, content: str, delay: float):
+        for idx, c in enumerate(content):
+            os.write(fd, c.encode())
+            if idx == len(content) - 1:
+                self.last_typing = time.time()
+            time.sleep(delay)
+
+    def clear_header(self, fd: int, ps1: str):
+        if ps1 != "":
+            os.write(fd, ("export PS1='%s'\n" % ps1).encode())
+        while True:
+            if self.read_with_timeout(fd, 1) is None:
+                break
+
+    def get_prompt(self, fd: int):
+        os.write(fd, b"\n")
+        output = self.read_with_timeout(fd, 10)
+        while True:
+            out = self.read_with_timeout(fd, 1)
+            if out is None:
+                break
+            output += out
+
+        n = output.rsplit(b'\r', 1)
+        if len(n) == 2:
+            return n[1]
+        return output
+
+    def must_get_prompt(self, fd: int):
+        prompt = self.get_prompt(fd)
+        prompt2 = self.get_prompt(fd)
+        if prompt == prompt2:
+            return prompt
+
+        prompt3 = self.get_prompt(fd)
+        if prompt2 == prompt3:
+            return prompt2
+
+        if prompt == prompt3:
+            return prompt
+
+        raise "can't to get prompt %s, %s, %s" % (prompt, prompt2, prompt)
+
+    def step(self, fd: int, line: str, prompt: str):
+        content = line.strip()
+        if not content:
+            self.write_with_delay(fd, "\n", self.typing_interval)
             return
 
+        if content.startswith('#'):
+            self.write_with_delay(fd, line, self.typing_interval)
+            return
 
-def wait_prompt():
-    global last_prompt
-    global last_typing
-    while True:
-        if last_prompt > last_typing:
-            break
-        time.sleep(0.1)
+        if content.startswith('@'):
+            args = content.split(' ')
+            if args[0] == '@pause':
+                input()
+                print(prompt, end='')
+            elif len(args) >= 2 and args[0] == '@sleep':
+                time.sleep(float(args[1]))
+            elif len(args) >= 2 and args[0] == '@typing-interval':
+                self.typing_interval = float(args[1])
+            return
 
+        self.write_with_delay(fd, line, self.typing_interval)
+        # Multiline input
+        if line.endswith("\\\n"):
+            return
 
-def write_with_delay(fd: int, content: str, delay: float):
-    global last_typing
-    for idx, c in enumerate(content):
-        os.write(fd, c.encode())
-        if idx == len(content) - 1:
-            last_typing = time.time()
-        time.sleep(delay)
+        # Clear the screen
+        if content == "clear":
+            return
 
+        self.wait_prompt()
 
-def clear_header(fd: int, ps1: str):
-    if ps1 != "":
-        os.write(fd, ("export PS1='%s'\n" % ps1).encode())
-    while True:
-        if read_with_timeout(fd, 1) is None:
-            break
+    def resize(self, fd: int, cols: int, rows: int):
+        if rows > 0 and cols > 0:
+            fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
+    def __init__(
+            self,
+            file: str,
+            ps1: str,
+            shell: str,
+            term: str,
+            cols: int,
+            rows: int,
+            env: list[str],
+            typing_interval: float = 0.1
+    ):
+        self.last_typing = time.time()
+        self.last_prompt = time.time()
+        self.typing_interval = typing_interval
 
-def get_prompt(fd: int):
-    os.write(fd, b"\n")
-    output = read_with_timeout(fd, 10)
-    while True:
-        out = read_with_timeout(fd, 1)
-        if out is None:
-            break
-        output += out
+        master, slave = pty.openpty()
 
-    n = output.rsplit(b'\r', 1)
-    if len(n) == 2:
-        return n[1]
-    return output
+        self.resize(master, rows, cols)
 
+        sub_env = {
+            "SHELL": shell,
+            "TERM": term,
+        }
+        if ps1 != "":
+            sub_env["PS1"] = ps1
 
-def must_get_prompt(fd: int):
-    prompt = get_prompt(fd)
-    prompt2 = get_prompt(fd)
-    if prompt == prompt2:
-        return prompt
+        for e in env:
+            if e in os.environ:
+                sub_env[e] = os.environ[e]
+        subprocess.Popen(
+            [shell],
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            env=sub_env,
+        )
 
-    prompt3 = get_prompt(fd)
-    if prompt2 == prompt3:
-        return prompt2
+        os.close(slave)
 
-    if prompt == prompt3:
-        return prompt
+        self.clear_header(master, ps1)
 
-    raise "can't to get prompt %s, %s, %s" % (prompt, prompt2, prompt)
+        prompt = self.must_get_prompt(master)
 
+        sim_prompt = prompt.decode().lstrip()
+        print(sim_prompt, end='')
 
-def step(fd: int, line: str, prompt: str):
-    global typing_interval
-    content = line.strip()
-    if not content:
-        write_with_delay(fd, "\n", typing_interval)
-        return
+        t = threading.Thread(target=self.redirect_output, args=(master, prompt))
+        t.start()
 
-    if content.startswith('#'):
-        write_with_delay(fd, line, typing_interval)
-        return
+        with open(file, 'r') as f:
+            for line in f:
+                self.step(master, line, sim_prompt)
 
-    if content.startswith('@'):
-        args = content.split(' ')
-        if args[0] == '@pause':
-            input()
-            print(prompt, end='')
-        elif len(args) >= 2 and args[0] == '@sleep':
-            time.sleep(float(args[1]))
-        elif len(args) >= 2 and args[0] == '@typing-interval':
-            typing_interval = float(args[1])
-        return
-
-    write_with_delay(fd, line, typing_interval)
-    # Multiline input
-    if line.endswith("\\\n"):
-        return
-
-    # Clear the screen
-    if content == "clear":
-        return
-
-    wait_prompt()
-
-
-def _main(
-    file: str,
-    ps1: str,
-    shell: str,
-    term: str,
-    cols: int,
-    rows: int,
-    env: list[str],
-):
-    master, slave = pty.openpty()
-
-    if rows > 0 and cols > 0:
-        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
-
-    sub_env = {
-        "SHELL": shell,
-        "TERM": term,
-    }
-    if ps1 != "":
-        sub_env["PS1"] = ps1
-
-    for e in env:
-        if e in os.environ:
-            sub_env[e] = os.environ[e]
-    subprocess.Popen(
-        [shell],
-        stdin=slave,
-        stdout=slave,
-        stderr=slave,
-        env=sub_env,
-    )
-
-    os.close(slave)
-
-    clear_header(master, ps1)
-
-    prompt = must_get_prompt(master)
-
-    sim_prompt = prompt.decode().lstrip()
-    print(sim_prompt, end='')
-
-    t = threading.Thread(target=redirect_output, args=(master, prompt))
-    t.start()
-
-    with open(file, 'r') as f:
-        for line in f:
-            step(master, line, sim_prompt)
-
-    os.close(master)
+        os.close(master)
 
 
 def main():
@@ -200,7 +193,7 @@ def main():
         print(f"File {args.file} does not exist.")
         sys.exit(1)
 
-    _main(
+    PlayPty(
         file=args.file,
         ps1=args.ps1,
         shell=args.shell,
