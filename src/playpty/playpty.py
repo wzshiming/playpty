@@ -126,6 +126,8 @@ class PlayPty:
             shell: str,
             term: str,
             env: list[str],
+            cols: int,
+            rows: int,
             typing_interval: float = 0.1,
             empty_line_interval: float = 1.0,
     ):
@@ -139,6 +141,8 @@ class PlayPty:
         self.term = term
         self.ps1 = ps1
         self.env = env
+        self.cols = cols
+        self.rows = rows
 
     def __enter__(self):
         self.start()
@@ -146,7 +150,11 @@ class PlayPty:
 
     def start(self):
         master, slave = pty.openpty()
-
+        self.master = master
+        self.resize(
+            cols=self.cols,
+            rows=self.rows,
+        )
         sub_env = {
             "SHELL": self.shell,
             "TERM": self.term,
@@ -172,7 +180,6 @@ class PlayPty:
         prompt = self.must_get_prompt(master)
 
         sim_prompt = prompt.decode().lstrip()
-        self.master = master
         self.sim_prompt = sim_prompt
 
         t = threading.Thread(target=self.redirect_output, args=(master, prompt))
@@ -189,8 +196,19 @@ class PlayPty:
         self.step(self.master, line, self.sim_prompt)
 
     def resize(self, cols: int, rows: int):
-        if rows > 0 and cols > 0:
-            fcntl.ioctl(self.master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        if rows <= 0 or cols <= 0:
+            r, c = self.get_resize()
+            if rows <= 0:
+                rows = r
+            if cols <= 0:
+                cols = c
+
+        fcntl.ioctl(self.master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+
+    def get_resize(self):
+        rows, cols, _, _ = struct.unpack('HHHH', fcntl.ioctl(0, termios.TIOCGWINSZ, b'\x00' * 8))
+        return int(rows), int(cols)
 
 
 def main():
@@ -212,17 +230,15 @@ def main():
         sys.exit(1)
 
     with PlayPty(
-        ps1=args.ps1,
-        shell=args.shell,
-        term=args.term,
-        env=args.env,
-        typing_interval=float(args.typing_interval),
-        empty_line_interval=float(args.empty_line_interval),
-    ) as pp, open(args.file, 'r') as f:
-        pp.resize(
+            ps1=args.ps1,
+            shell=args.shell,
+            term=args.term,
+            env=args.env,
             cols=int(args.cols),
             rows=int(args.rows),
-        )
+            typing_interval=float(args.typing_interval),
+            empty_line_interval=float(args.empty_line_interval),
+    ) as pp, open(args.file, 'r') as f:
         for line in f:
             pp.play_line(line)
 
